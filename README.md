@@ -92,7 +92,7 @@ All four gates must pass, on Linux and Windows alike:
 
 ```bash
 ruff check . && ruff format --check .
-mypy ntspy
+mypy ntspy tests
 pytest -q --cov
 python -O -m pytest -q
 ```
