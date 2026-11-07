@@ -15,14 +15,14 @@ import pytest
 import ntspy as package
 
 SURFACE = [
-    ("packet", "decode_packet", "RFC 5905"),
-    ("packet", "encode_packet", "RFC 5905"),
-    ("ke", "encode_record", "RFC 8915"),
-    ("ke", "establish", "RFC 8915"),
-    ("cookies", "mint", "RFC 8915"),
-    ("cookies", "validate", "RFC 8915"),
-    ("extension", "authenticate", "RFC 8915"),
-    ("extension", "verify", "RFC 8915"),
+    ("packet", "decode_packet", "RFC 5905 sec. 7.3, sec. 7.5"),
+    ("packet", "encode_packet", "RFC 5905 sec. 7.3, sec. 7.5"),
+    ("ke", "encode_record", "RFC 8915 sec. 4.1"),
+    ("ke", "establish", "RFC 8915 sec. 4"),
+    ("cookies", "mint", "RFC 8915 sec. 5.4, sec. 6"),
+    ("cookies", "validate", "RFC 8915 sec. 5.4, sec. 6"),
+    ("extension", "authenticate", "RFC 8915 sec. 5.6"),
+    ("extension", "verify", "RFC 8915 sec. 5.6"),
     ("client", "synchronize", "RFC 8915, RFC 8633"),
     ("server", "serve", "RFC 8915"),
 ]
@@ -42,7 +42,10 @@ def test_surface_is_documented(module_name, fn, cite):
     module = importlib.import_module(package.__name__ + "." + module_name)
     target = getattr(module, fn)
     assert target.__doc__, fn + " needs a docstring"
-    assert cite in target.__doc__, fn + " must cite the document that defines it"
+    # Docstrings are wrapped, so a long citation can span a line break; compare words, not layout.
+    assert " ".join(cite.split()) in " ".join(target.__doc__.split()), (
+        fn + " must cite the document that defines it"
+    )
 
 
 @pytest.mark.parametrize(("module_name", "fn", "cite"), SURFACE)

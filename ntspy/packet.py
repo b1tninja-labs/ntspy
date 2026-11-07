@@ -21,18 +21,18 @@ __all__ = [
 
 
 def decode_packet(raw: bytes) -> NtpPacket:
-    """Pending behaviour defined by RFC 5905.
+    """Pending behaviour defined by RFC 5905 sec. 7.3, sec. 7.5.
 
     Not implemented yet. See the ``packet.decode_packet()`` row in ROADMAP.md; this stub
     raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("decode_packet() is not implemented: RFC 5905")
+    raise NotImplementedError("decode_packet() is not implemented: RFC 5905 sec. 7.3, sec. 7.5")
 
 
 def encode_packet(packet: NtpPacket) -> bytes:
-    """Pending behaviour defined by RFC 5905.
+    """Pending behaviour defined by RFC 5905 sec. 7.3, sec. 7.5.
 
     Not implemented yet. See the ``packet.encode_packet()`` row in ROADMAP.md; this stub
     raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("encode_packet() is not implemented: RFC 5905")
+    raise NotImplementedError("encode_packet() is not implemented: RFC 5905 sec. 7.3, sec. 7.5")

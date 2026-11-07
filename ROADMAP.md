@@ -11,23 +11,27 @@ behaviour regressed. Reading the code and agreeing with it is not enough. That i
 Legend: `[ok]` implemented and pinned by a named test -- `[part]` partial, with what is
 missing stated -- `[ ]` not implemented -- `[no]` deliberate non-goal.
 
+A Where cell marked `(to be written)` names the test that will pin the row once it exists; no
+such test has been written yet, and the row cannot leave `[ ]` until it has. The Milestone
+column places the row on the ladder in section 2, and `-` means it is not placed yet.
+
 Update the affected row in the same commit that changes the behaviour. A row and its test
 drift apart within one release, and the document becomes useless exactly when it is needed.
 
 ## 1. Obligations
 
-| Obligation | Spec | Status | Where |
-|---|---|---|---|
-| `packet.decode_packet()` | RFC 5905 | `[ ]` | `tests/test_obligations.py::decode_packet` |
-| `packet.encode_packet()` | RFC 5905 | `[ ]` | `tests/test_obligations.py::encode_packet` |
-| `ke.encode_record()` | RFC 8915 | `[ ]` | `tests/test_obligations.py::encode_record` |
-| `ke.establish()` | RFC 8915 | `[ ]` | `tests/test_obligations.py::establish` |
-| `cookies.mint()` | RFC 8915 | `[ ]` | `tests/test_obligations.py::mint` |
-| `cookies.validate()` | RFC 8915 | `[ ]` | `tests/test_obligations.py::validate` |
-| `extension.authenticate()` | RFC 8915 | `[ ]` | `tests/test_obligations.py::authenticate` |
-| `extension.verify()` | RFC 8915 | `[ ]` | `tests/test_obligations.py::verify` |
-| `client.synchronize()` | RFC 8915, RFC 8633 | `[ ]` | `tests/test_obligations.py::synchronize` |
-| `server.serve()` | RFC 8915 | `[ ]` | `tests/test_obligations.py::serve` |
+| Obligation | Spec | Status | Where | Milestone |
+|---|---|---|---|---|
+| `packet.decode_packet()` | RFC 5905 sec. 7.3, sec. 7.5 | `[ ]` | `tests/test_obligations.py::test_decode_packet` (to be written) | M1 |
+| `packet.encode_packet()` | RFC 5905 sec. 7.3, sec. 7.5 | `[ ]` | `tests/test_obligations.py::test_encode_packet` (to be written) | M1 |
+| `ke.encode_record()` | RFC 8915 sec. 4.1 | `[ ]` | `tests/test_obligations.py::test_encode_record` (to be written) | M3 |
+| `ke.establish()` | RFC 8915 sec. 4 | `[ ]` | `tests/test_obligations.py::test_establish` (to be written) | M3 |
+| `cookies.mint()` | RFC 8915 sec. 5.4, sec. 6 | `[ ]` | `tests/test_obligations.py::test_mint` (to be written) | M4 |
+| `cookies.validate()` | RFC 8915 sec. 5.4, sec. 6 | `[ ]` | `tests/test_obligations.py::test_validate` (to be written) | M4 |
+| `extension.authenticate()` | RFC 8915 sec. 5.6 | `[ ]` | `tests/test_obligations.py::test_authenticate` (to be written) | M2 |
+| `extension.verify()` | RFC 8915 sec. 5.6 | `[ ]` | `tests/test_obligations.py::test_verify` (to be written) | M2 |
+| `client.synchronize()` | RFC 8915, RFC 8633 | `[ ]` | `tests/test_obligations.py::test_synchronize` (to be written) | M3 |
+| `server.serve()` | RFC 8915 | `[ ]` | `tests/test_obligations.py::test_serve` (to be written) | M5 |
 
 ## 2. Milestones
 
@@ -44,7 +48,7 @@ the code existing. Coverage in `pyproject.toml` ratchets in the same commit.
 ## 3. Errata watch
 
 - RFC 5905 carries 15 verified errata, the heaviest errata load in this portfolio, and is updated by RFC 7822, RFC 8573, RFC 9109, RFC 9748 and RFC 9769. The packet layer is written against the errata, not the 2010 text.
-- Re-check the errata pages for RFC 8915 and RFC 9748 before the M1 freeze rather than trusting what is written here.
+- RFC 8915 and RFC 9748 have no errata on file as of the 2026-10-29 errata feed (rfclib, read 2026-11-06). Re-check at the M1 freeze.
 
 ## 4. Deliberate non-goals
 

@@ -22,18 +22,18 @@ __all__ = [
 
 
 def authenticate(packet: NtpPacket, context: Negotiated) -> NtpPacket:
-    """Pending behaviour defined by RFC 8915.
+    """Pending behaviour defined by RFC 8915 sec. 5.6.
 
     Not implemented yet. See the ``extension.authenticate()`` row in ROADMAP.md; this
     stub raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("authenticate() is not implemented: RFC 8915")
+    raise NotImplementedError("authenticate() is not implemented: RFC 8915 sec. 5.6")
 
 
 def verify(packet: NtpPacket, context: Negotiated) -> bool:
-    """Pending behaviour defined by RFC 8915.
+    """Pending behaviour defined by RFC 8915 sec. 5.6.
 
     Not implemented yet. See the ``extension.verify()`` row in ROADMAP.md; this stub
     raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("verify() is not implemented: RFC 8915")
+    raise NotImplementedError("verify() is not implemented: RFC 8915 sec. 5.6")

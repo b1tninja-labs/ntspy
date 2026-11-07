@@ -22,18 +22,18 @@ __all__ = [
 
 
 def mint(state: ServerState, aead_key: bytes) -> bytes:
-    """Pending behaviour defined by RFC 8915.
+    """Pending behaviour defined by RFC 8915 sec. 5.4, sec. 6.
 
     Not implemented yet. See the ``cookies.mint()`` row in ROADMAP.md; this stub raises
     on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("mint() is not implemented: RFC 8915")
+    raise NotImplementedError("mint() is not implemented: RFC 8915 sec. 5.4, sec. 6")
 
 
 def validate(cookie: bytes, state: ServerState) -> Negotiated:
-    """Pending behaviour defined by RFC 8915.
+    """Pending behaviour defined by RFC 8915 sec. 5.4, sec. 6.
 
     Not implemented yet. See the ``cookies.validate()`` row in ROADMAP.md; this stub
     raises on purpose so nothing downstream mistakes it for working code.
     """
-    raise NotImplementedError("validate() is not implemented: RFC 8915")
+    raise NotImplementedError("validate() is not implemented: RFC 8915 sec. 5.4, sec. 6")

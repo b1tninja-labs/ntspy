@@ -51,7 +51,7 @@ document, which is the honest grain size for a plan. See [docs/rfc-map.md](docs/
 ### Errata watch
 
 - RFC 5905 carries 15 verified errata, the heaviest errata load in this portfolio, and is updated by RFC 7822, RFC 8573, RFC 9109, RFC 9748 and RFC 9769. The packet layer is written against the errata, not the 2010 text.
-- Re-check the errata pages for RFC 8915 and RFC 9748 before the M1 freeze rather than trusting what is written here.
+- RFC 8915 and RFC 9748 have no errata on file as of the 2026-10-29 errata feed (rfclib, read 2026-11-06). Re-check at the M1 freeze.
 
 ## Module layout
 
@@ -76,7 +76,8 @@ document, which is the honest grain size for a plan. See [docs/rfc-map.md](docs/
 ## Install
 
 ```bash
-git clone https://github.com/b1tninja/ntspy.cd ntspy
+git clone https://github.com/b1tninja/ntspy.git
+cd ntspy
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\\Scripts\\Activate.ps1
 pip install -e ".[dev]"
