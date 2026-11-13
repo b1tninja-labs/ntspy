@@ -54,7 +54,7 @@ rather than merely incomplete.
 3. **Normative text is never paraphrased from memory.** Fetch it with `rfclib` and
    cite the section. If the text you fetch does not say what the obligation claims,
    the obligation is wrong: fix the roadmap row and say so in the commit.
-4. **Dependencies.** `pyproject.toml` here declares no runtime dependencies. Adding a runtime
+4. **Dependencies.** `pyproject.toml` here declares no required runtime dependencies; the owner's rule (2026-11-13) allows the `cryptography` package for primitives (AES-SIV, AES-CMAC), declared as the optional `crypto` extra, and everything else is ours. Adding a runtime
    dependency needs a paragraph of justification in `docs/strategy.md` explaining
    why the standard library is not enough.
 5. **Scope.** What is deliberately absent is listed under Non-goals in `README.md`.

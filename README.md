@@ -32,7 +32,7 @@ What this project intends to add:
 - cookie issue, cache, renewal and the critical-path rule that a stale cookie must not break time
 - the NTP extension field authenticator and its truncated MAC discipline
 - a server side, because an authenticated client with nothing to talk to measures nothing
-- TLS exporter secrets through the cryptography extra rather than a bespoke TLS stack
+- AES-SIV-CMAC from the `cryptography` extra (the standard library has no AES). The TLS exporter NTS-KE needs is not offered by Python's `ssl` or by `cryptography`, so NTS-KE is on hold (ROADMAP row `ke.tls-exporter`, `[no]`)
 
 ## Specification spine
 

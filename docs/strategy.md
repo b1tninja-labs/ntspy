@@ -42,3 +42,13 @@ One string everywhere: the distribution, the import and the console script. A na
 means one thing in the installer, in `import` and on `PATH` is the only arrangement that
 cannot surprise anyone, and it is also why this project does not sit one edit away from a
 project that already exists.
+
+## Dependency: cryptography (2026-11-13)
+
+The standard library has no AES, so AEAD_AES_SIV_CMAC_256 (the algorithm RFC 8915 sec. 4.1.5 makes
+mandatory) and AES-CMAC (RFC 8573) cannot be written on it. The owner's rule allows the
+`cryptography` package for primitives. `cryptography.hazmat.primitives.ciphers.aead.AESSIV` (added in
+37.0.0; documented at https://cryptography.io/en/latest/hazmat/primitives/aead/) implements RFC 5297,
+and `tests/test_auth.py` pins it to the RFC 5297 A.2 vector. It is the optional `crypto` extra, imported
+on first use, so the packet codec needs nothing. HKDF is done here on `hmac` (RFC 5869 A.1 vector). It
+does not provide a TLS exporter, which is why NTS-KE is `[no]` for now.

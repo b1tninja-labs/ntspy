@@ -46,7 +46,7 @@ dev = [
   # first being able to build one, so the build dependency belongs in the dev group.
   "build",
 ]
-crypto = ["cryptography>50.0.2"]
+crypto = ["cryptography>=37.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/b1tninja/ntspy"
