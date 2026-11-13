@@ -35,6 +35,7 @@ __all__ = [
     "NakAction",
     "NakTracker",
     "authenticate",
+    "authenticated_extensions",
     "classify_kod",
     "cookie_field",
     "open_authenticator",
@@ -149,6 +150,20 @@ def open_authenticator(packet: NtpPacket, context: Negotiated) -> tuple[Extensio
         return parse_extension_fields(plaintext)
     except PacketError as error:
         raise AuthenticationError("decrypted extension fields are malformed") from error
+
+
+def authenticated_extensions(packet: NtpPacket, context: Negotiated) -> tuple[ExtensionField, ...]:
+    """The extension fields a receiver may act on: the authenticated ones, in wire order.
+
+    RFC 8915 sec. 5.7 para 11 (client) and para 7 (server) say the receiver MUST discard any
+    unauthenticated extension fields. A field is authenticated when it comes before the NTS
+    Authenticator (its associated data covers it) or sits inside it, decrypted. Fields after the
+    authenticator are neither encrypted nor authenticated and are dropped. The authenticator
+    itself is not returned. Raises ``AuthenticationError`` when the packet does not authenticate.
+    """
+    index, _ = _locate(packet)
+    decrypted = open_authenticator(packet, context)
+    return (*packet.extensions[:index], *decrypted)
 
 
 def verify(packet: NtpPacket, context: Negotiated) -> bool:

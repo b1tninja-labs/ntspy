@@ -115,3 +115,23 @@ def test_authenticator_length_lies_are_refused():
     forged = ExtensionField(NTS_AUTHENTICATOR, b"\xff\xff\xff\xff" + field.value[4:])
     bad = replace(good, extensions=(*good.extensions[:-1], forged), raw=b"")
     assert not verify(bad, KEYS)
+
+
+def test_fields_after_the_authenticator_are_discarded():
+    """RFC 8915 sec. 5.7 para 11: the client MUST discard unauthenticated extension fields."""
+    from ntspy.extension import authenticated_extensions
+
+    uid = unique_identifier_field()
+    inner = ExtensionField(COOKIE, b"n" * 100)
+    before = ExtensionField(0x0999, b"b" * 28)
+    after = ExtensionField(0x0998, b"a" * 28)
+    sealed = authenticate(request(mode=4, ext=[uid, before]), KEYS, encrypted=[inner])
+    on_the_wire = replace(sealed, extensions=(*sealed.extensions, after), raw=b"")
+    packet = wire(on_the_wire)
+    assert after in packet.extensions  # it is on the wire, so only the filter can drop it
+    kept = authenticated_extensions(packet, KEYS)
+    assert kept == (uid, before, inner)
+    assert after not in kept
+    assert all(f.field_type != NTS_AUTHENTICATOR for f in kept)
+    with pytest.raises(AuthenticationError):
+        authenticated_extensions(nts_request(), KEYS)
