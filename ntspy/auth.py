@@ -11,20 +11,28 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+
+from .packet import Mac, NtpPacket, encode_packet
 
 __all__ = [
     "AEAD_AES_SIV_CMAC_256",
     "AEAD_AES_SIV_CMAC_384",
     "AEAD_AES_SIV_CMAC_512",
+    "CMAC_KEY_LENGTH",
+    "CMAC_TAG_LENGTH",
     "EXPORTER_LABEL",
     "AuthenticationError",
     "Negotiated",
+    "aes_cmac",
     "exporter_context",
     "hkdf_sha256",
     "key_length",
+    "sign_mac",
     "siv_open",
     "siv_seal",
+    "verify_mac",
 ]
 
 # AEAD registry numbers (RFC 5297 sec. 6, RFC 8915 sec. 4.1.5).
@@ -126,3 +134,77 @@ def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:
         okm += block
         counter += 1
     return okm[:length]
+
+
+# --- symmetric-key MAC with AES-CMAC (RFC 8573) ---------------------------------------------
+
+CMAC_KEY_LENGTH = 16
+"""RFC 8573 sec. 3: "The MAC key for NTP MUST be an AES-128 key that is 128 bits in length"."""
+CMAC_TAG_LENGTH = 16
+"""RFC 8573 sec. 3: the tag "MUST be at least 128 bits"; AES-CMAC produces exactly 128."""
+
+
+def aes_cmac(key: bytes, data: bytes) -> bytes:
+    """AES-CMAC (RFC 4493) of ``data`` under a 128-bit key, from ``cryptography``.
+
+    RFC 8573 sec. 3 wants a 16-octet key; any other length is refused here instead of being
+    accepted as AES-192 or AES-256, which RFC 8573 does not allow for NTP.
+    """
+    if len(key) != CMAC_KEY_LENGTH:
+        raise AuthenticationError(
+            f"an NTP AES-CMAC key is {CMAC_KEY_LENGTH} octets (RFC 8573 sec. 3)"
+        )
+    try:
+        from cryptography.hazmat.primitives import cmac
+        from cryptography.hazmat.primitives.ciphers import algorithms
+    except ImportError as error:  # pragma: no cover - depends on the environment
+        raise AuthenticationError(
+            "AES-CMAC needs the cryptography package: pip install ntspy[crypto]"
+        ) from error
+    mac = cmac.CMAC(algorithms.AES(key))
+    mac.update(data)
+    return mac.finalize()
+
+
+def _mac_input(packet: NtpPacket) -> bytes:
+    """The header and every extension field as they would be sent, without the MAC (RFC 8573 sec. 3)."""
+    header = encode_packet(replace(packet, extensions=(), mac=None, raw=b""))
+    return header + b"".join(e.encode() for e in packet.extensions)
+
+
+def sign_mac(packet: NtpPacket, key_id: int, key: bytes) -> NtpPacket:
+    """Append the RFC 8573 MAC: the 4-octet key identifier and the AES-CMAC of the packet.
+
+    "AES-CMAC ... MUST be computed over all fields in the NTP header and any extension fields
+    that are present". The key identifier is not part of the input (it is the MAC's own header, as
+    in RFC 5905 sec. 7.3 where the digest follows it). Returns the packet with ``mac`` set and
+    ``raw`` re-encoded.
+    """
+    if packet.mac is not None:
+        raise ValueError("the packet already carries a MAC")
+    if not 0 <= key_id <= 0xFFFFFFFF:
+        raise ValueError("key identifier does not fit 32 bits")
+    tag = aes_cmac(key, _mac_input(packet))
+    signed = replace(packet, mac=Mac(key_id, tag), raw=b"")
+    return replace(signed, raw=encode_packet(signed))
+
+
+def verify_mac(packet: NtpPacket, keys: Mapping[int, bytes]) -> bool:
+    """True when the packet's MAC is the AES-CMAC under the key its identifier names.
+
+    ``keys`` maps key identifiers to 16-octet AES-CMAC keys. A packet with no MAC, an identifier
+    with no key, a digest that is not the 16-octet CMAC tag (a 20-octet digest is an MD5 or SHA-1
+    shape, which this check never accepts) or a wrong tag is simply ``False``. The comparison is
+    constant time. The MAC is checked over the octets as received when ``raw`` is present.
+    """
+    mac = packet.mac
+    if mac is None or len(mac.digest) != CMAC_TAG_LENGTH:
+        return False
+    key = keys.get(mac.key_id)
+    if key is None or len(key) != CMAC_KEY_LENGTH:
+        return False
+    if packet.raw:
+        signed = packet.raw[: len(packet.raw) - 4 - CMAC_TAG_LENGTH]
+    else:
+        signed = _mac_input(packet)
+    return hmac.compare_digest(aes_cmac(key, signed), mac.digest)

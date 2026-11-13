@@ -8,10 +8,11 @@ must hold, in ``extensions``, exactly the fields that are to be authenticated bu
 
 from __future__ import annotations
 
+import enum
 import os
 import struct
-from collections.abc import Sequence
-from dataclasses import replace
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass, replace
 
 from .auth import AuthenticationError, Negotiated, siv_open, siv_seal
 from .packet import (
@@ -28,7 +29,13 @@ __all__ = [
     "COOKIE_PLACEHOLDER",
     "NTS_AUTHENTICATOR",
     "UNIQUE_IDENTIFIER",
+    "KodAction",
+    "KodDiscardError",
+    "KodResult",
+    "NakAction",
+    "NakTracker",
     "authenticate",
+    "classify_kod",
     "cookie_field",
     "open_authenticator",
     "placeholder_field",
@@ -151,3 +158,134 @@ def verify(packet: NtpPacket, context: Negotiated) -> bool:
     except AuthenticationError:
         return False
     return True
+
+
+# --- kiss-o'-death and NTS NAK (RFC 8915 sec. 5.7, RFC 5905 sec. 7.4) -----------------------
+
+
+class KodAction(enum.Enum):
+    """What a client does with a kiss-o'-death packet (RFC 5905 sec. 7.4, RFC 8915 sec. 5.7)."""
+
+    DEMOBILIZE = enum.auto()  # DENY, RSTR: demobilize the association and stop sending
+    SLOW_DOWN = enum.auto()  # RATE: increase the polling interval, and again on each RATE
+    NTS_NAK = enum.auto()  # NTSN: the server could not validate the cookie
+    IGNORE = enum.auto()  # anything else: no protocol significance, discarded after inspection
+
+
+class KodDiscardError(ValueError):
+    """A kiss-o'-death packet that MUST be discarded without further processing."""
+
+
+@dataclass(frozen=True, slots=True)
+class KodResult:
+    """A kiss code and the action it calls for.
+
+    ``uid_matched`` is true when the packet carried a Unique Identifier equal to an outstanding
+    request's. The receive and transmit timestamps of a KoD are not exposed: RFC 5905 sec. 7.4
+    para 8 says they "MUST be discarded".
+    """
+
+    code: str
+    action: KodAction
+    uid_matched: bool
+
+
+def _unique_identifiers(packet: NtpPacket) -> list[bytes]:
+    return [e.value for e in packet.extensions if e.field_type == UNIQUE_IDENTIFIER]
+
+
+def classify_kod(
+    packet: NtpPacket,
+    *,
+    outstanding: Collection[bytes],
+    previously_authentic: bool,
+) -> KodResult:
+    """Classify a stratum 0 packet and decide what it asks of the client.
+
+    The kiss code is the reference identifier as ASCII (RFC 5905 sec. 7.3 para 24). Actions are
+    those of sec. 7.4: DENY and RSTR demobilize; RATE slows the client (verified erratum 3007
+    corrects "reduce its polling interval" to "increase": the client must poll less often); codes
+    beginning with "X" are ignored when unrecognized; other codes are discarded after inspection.
+    ``NTSN`` is the NTS NAK of RFC 8915 sec. 5.7 para 13, which "MUST NOT include any NTS Cookie or
+    NTS Authenticator and Encrypted Extension Fields", so one that does is discarded.
+
+    Para 14: if the server "has previously responded with authentic NTS-protected NTP packets, the
+    client MUST verify that any KoD packets ... contain the Unique Identifier extension field and
+    that the Unique Identifier matches that of an outstanding request"; failing that, the packet is
+    discarded. ``previously_authentic`` says which case this is. A KoD seen before any authentic
+    reply need not carry one (a server that never replied cannot be told from a forger), and when
+    it does carry one that matches, ``uid_matched`` records it. One that carries a UID matching
+    nothing is discarded either way.
+
+    Raises:
+        KodDiscardError: not a KoD, or one the rules above say to discard.
+    """
+    if packet.stratum != 0 or packet.mode != 4:
+        raise KodDiscardError("not a server kiss-o'-death packet (stratum 0, mode 4)")
+    code = packet.reference_id.rstrip(b"\x00").decode("ascii", errors="replace")
+    uids = _unique_identifiers(packet)
+    matched = any(uid in outstanding for uid in uids)
+    if uids and not matched:
+        raise KodDiscardError("the Unique Identifier matches no outstanding request")
+    if previously_authentic and not matched:
+        raise KodDiscardError(
+            "after authentic replies a KoD must carry a matching Unique Identifier"
+        )
+    if code == "NTSN":
+        banned = {COOKIE, NTS_AUTHENTICATOR}
+        if any(e.field_type in banned for e in packet.extensions):
+            raise KodDiscardError(
+                "an NTS NAK carries no Cookie or Authenticator field (sec. 5.7 para 13)"
+            )
+        action = KodAction.NTS_NAK
+    elif code in {"DENY", "RSTR"}:
+        action = KodAction.DEMOBILIZE
+    elif code == "RATE":
+        action = KodAction.SLOW_DOWN
+    else:
+        action = KodAction.IGNORE  # includes unrecognized "X..." codes, which MUST be ignored
+    return KodResult(code, action, matched)
+
+
+class NakAction(enum.Enum):
+    """What to do after an NTS NAK, as polling continues (RFC 8915 sec. 5.7 para 16)."""
+
+    WAIT = enum.auto()  # keep polling with the cookies and parameters held
+    RERUN_KE = enum.auto()  # no valid NTS reply arrived: negotiate fresh cookies, keys, parameters
+    NOTHING = enum.auto()  # no NAK outstanding
+
+
+class NakTracker:
+    """The client's state after an NTS NAK (sec. 5.7 para 16).
+
+    "Upon reception of the NTS NAK kiss code, the client SHOULD wait until the next poll for a
+    valid NTS-protected response, and if none is received, initiate a fresh NTS-KE handshake ...
+    As long as the NTS-KE handshake has not succeeded, the client SHOULD continue polling the NTP
+    server using the cookies and parameters it has." The rate limit on rerunning NTS-KE (para 15)
+    is ``ke.KeBackoff``'s.
+    """
+
+    def __init__(self) -> None:
+        self._pending = False
+        self._polled_since_nak = False
+
+    def on_nak(self) -> None:
+        self._pending = True
+        self._polled_since_nak = False
+
+    def on_poll(self, *, valid_nts_response: bool) -> NakAction:
+        """Record the outcome of a poll made after a NAK and say what the client does next."""
+        if not self._pending:
+            return NakAction.NOTHING
+        if valid_nts_response:
+            self._pending = False  # the NAK was a transient; the held cookies still work
+            return NakAction.NOTHING
+        if not self._polled_since_nak:
+            self._polled_since_nak = True
+            return NakAction.WAIT
+        return NakAction.RERUN_KE
+
+    def on_ke_succeeded(self) -> None:
+        """A fresh handshake ends the episode; ``CookieJar.renew`` discards the old cookies."""
+        self._pending = False
+        self._polled_since_nak = False

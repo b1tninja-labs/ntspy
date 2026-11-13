@@ -10,6 +10,7 @@ module fixes one encoding of the tuple: I is 4 octets and N is 16 octets, so
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from .auth import (
@@ -22,7 +23,12 @@ from .auth import (
 )
 
 __all__ = [
+    "MAX_PLACEHOLDERS",
+    "TARGET_UNUSED",
     "CookieError",
+    "CookieJar",
+    "NeedKeyEstablishment",
+    "RequestPlan",
     "ServerState",
     "mint",
     "ratchet",
@@ -109,3 +115,141 @@ def validate(cookie: bytes, state: ServerState) -> Negotiated:
     s2c = plaintext[2 : 2 + length]
     c2s = plaintext[2 + length :]
     return Negotiated(aead_id, c2s, s2c)
+
+
+# --- the client's cookie cache (RFC 8915 sec. 5.7) -------------------------------------------
+
+TARGET_UNUSED = 8
+"""Sec. 5.7 para 4: placeholders are sized so the client ends up holding eight unused cookies."""
+MAX_PLACEHOLDERS = 7
+"""Sec. 5.7 para 4: the client SHOULD NOT include more than seven placeholder fields."""
+
+
+class NeedKeyEstablishment(CookieError):  # noqa: N818 - a state the caller acts on, not a failure
+    """No unused cookie is left, so the client SHOULD rerun NTS-KE (sec. 5.7 para 3)."""
+
+
+@dataclass(frozen=True, slots=True)
+class RequestPlan:
+    """What one NTS request carries: the cookie to send and how many placeholders to add."""
+
+    cookie: bytes
+    placeholders: int
+
+
+class CookieJar:
+    """The client's cookies for one NTP server, with the keys and parameters they belong to.
+
+    A cookie is sent once and then dropped (sec. 5.7 para 3: "SHOULD avoid reusing a cookie"), unless
+    the caller sets ``allow_reuse`` to favour resilience over unlinkability, in which case the last
+    cookie is sent again when none is unused. Clients never parse cookies (sec. 5.4); to the jar a
+    cookie is bytes.
+    """
+
+    def __init__(
+        self,
+        negotiated: Negotiated,
+        cookies: Sequence[bytes],
+        *,
+        server: str | None = None,
+        port: int = 123,
+        allow_reuse: bool = False,
+    ) -> None:
+        self.negotiated = negotiated
+        self.server = server
+        self.port = port
+        self.allow_reuse = allow_reuse
+        self._unused: list[bytes] = [bytes(c) for c in cookies]
+        self._last: bytes | None = None
+
+    @property
+    def unused(self) -> int:
+        return len(self._unused)
+
+    def needs_key_establishment(self) -> bool:
+        """True when a request cannot be made without rerunning NTS-KE (sec. 5.7 para 3)."""
+        return not self._unused and not (self.allow_reuse and self._last is not None)
+
+    def plan_request(self, *, max_placeholders: int = MAX_PLACEHOLDERS) -> RequestPlan:
+        """Take the next cookie and size the placeholders (sec. 5.7 para 3 to 5).
+
+        With ``u`` unused cookies before the request, one is sent, ``N`` placeholders are added and
+        the server returns ``N + 1``, so ``u - 1 + N + 1 = 8`` gives ``N = 8 - u``, capped at seven
+        and at ``max_placeholders`` (sec. 5.7 para 5 allows fewer to avoid fragmentation).
+
+        Raises:
+            NeedKeyEstablishment: nothing unused is left and reuse is not allowed.
+        """
+        if not 0 <= max_placeholders <= MAX_PLACEHOLDERS:
+            raise ValueError("max_placeholders is 0 to 7")
+        if self._unused:
+            placeholders = min(max(TARGET_UNUSED - len(self._unused), 0), max_placeholders)
+            cookie = self._unused.pop(0)
+            self._last = cookie
+            return RequestPlan(cookie, placeholders)
+        if self.allow_reuse and self._last is not None:
+            return RequestPlan(self._last, 0)
+        raise NeedKeyEstablishment("no unused cookie: rerun NTS-KE")
+
+    def accept(self, cookies: Sequence[bytes], plan: RequestPlan) -> None:
+        """Store the cookies of an authentic response to the request ``plan`` described.
+
+        The server "MUST NOT exceed" one plus the number of placeholders it was sent (sec. 5.7
+        para 9); more is a server error and is refused rather than stored.
+        """
+        if len(cookies) > plan.placeholders + 1:
+            raise CookieError("the server returned more cookies than placeholders plus one")
+        self._unused.extend(bytes(c) for c in cookies)
+
+    def renew(self, negotiated: Negotiated, cookies: Sequence[bytes], **parameters: object) -> None:
+        """Replace everything after a successful NTS-KE: the keys, parameters and cookies.
+
+        Sec. 5.7 para 16: "If the NTS-KE handshake succeeds, the client MUST discard all old
+        cookies and parameters and use the new ones instead." Until then, keep polling with what
+        is held; this method is only called on success.
+        """
+        self.negotiated = negotiated
+        self._unused = [bytes(c) for c in cookies]
+        self._last = None
+        for name, value in parameters.items():
+            if name not in {"server", "port"}:
+                raise TypeError(f"unknown parameter {name!r}")
+            setattr(self, name, value)
+
+    def snapshot(self) -> dict[str, object]:
+        """A plain dict for persistent storage (sec. 5.7 para 17): keys, AEAD, server, unused cookies.
+
+        It holds secrets; protecting the file is the caller's. Refuses to save a jar with no
+        unused cookie, because that is what sec. 5.7 para 17 exists to avoid.
+        """
+        if not self._unused:
+            raise NeedKeyEstablishment("nothing unused to keep for a later session restart")
+        return {
+            "aead_id": self.negotiated.aead_id,
+            "c2s_key": self.negotiated.c2s_key.hex(),
+            "s2c_key": self.negotiated.s2c_key.hex(),
+            "server": self.server,
+            "port": self.port,
+            "cookies": [c.hex() for c in self._unused],
+        }
+
+    @classmethod
+    def restore(cls, data: dict[str, object], *, allow_reuse: bool = False) -> CookieJar:
+        """Rebuild a jar from ``snapshot`` output; anything malformed raises ``CookieError``."""
+        try:
+            negotiated = Negotiated(
+                int(data["aead_id"]),  # type: ignore[call-overload]
+                bytes.fromhex(str(data["c2s_key"])),
+                bytes.fromhex(str(data["s2c_key"])),
+            )
+            cookies = [bytes.fromhex(str(c)) for c in data["cookies"]]  # type: ignore[attr-defined]
+            server = data.get("server")
+            return cls(
+                negotiated,
+                cookies,
+                server=None if server is None else str(server),
+                port=int(data.get("port", 123)),  # type: ignore[call-overload]
+                allow_reuse=allow_reuse,
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise CookieError(f"the saved cookie state is malformed: {error}") from error
